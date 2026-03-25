@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>NFL Draft Widget</title>
+
+  <style>
+    @font-face {
+      font-family: "Abolition";
+      src: url("./fonts/AbolitionTest-Regular.otf") format("opentype");
+    }
+
+    body {
+      margin: 0;
+      background: transparent;
+      overflow: hidden;
+      font-family: "Abolition", Arial, sans-serif;
+    }
+
+    .stage {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      padding-top: 6px;
+    }
+
+    .widget {
+      display: flex;
+      align-items: center;
+      height: 74px;
+      animation: slideIn 500ms ease-out;
+    }
+
+    .status-box {
+      background: #000;
+      color: #fff;
+      height: 74px;
+      min-width: 305px;
+      padding: 0 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      font-size: 58px;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      line-height: 1;
+      text-align: center;
+
+      transition: background 200ms ease, color 200ms ease;
+    }
+
+    .status-inner {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
+      line-height: 0.9;
+
+      /* tuned position */
+      transform: translateY(-7px);
+    }
+
+    .logo-box {
+      width: 112px;
+      height: 74px;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      transition: background 200ms ease;
+    }
+
+    .logo-box img {
+      width: 138px;
+      height: 138px;
+      object-fit: contain;
+      transform: scale(1.18);
+      transform-origin: center center;
+    }
+
+    .pick-in-flash {
+      animation: flash 0.45s ease-in-out 4;
+    }
+
+    @keyframes flash {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateY(-20px);
+        opacity: 0;
+      }
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="stage">
+    <div id="widget" class="widget">
+      <div id="statusText" class="status-box">
+        <div id="statusInner" class="status-inner">ON THE CLOCK</div>
+      </div>
+      <div id="logoBox" class="logo-box">
+        <img id="teamLogo" src="https://a.espncdn.com/i/teamlogos/nfl/500/den.png">
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const statusInner = document.getElementById("statusInner");
+    const teamLogo = document.getElementById("teamLogo");
+    const logoBox = document.getElementById("logoBox");
+    const statusText = document.getElementById("statusText");
+    const widget = document.getElementById("widget");
+
+    // 🔌 Render-safe WebSocket
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const ws = new WebSocket(`${protocol}//${window.location.host}`);
+
+    const logoMap = {
+      "Arizona Cardinals": "ari",
+      "Atlanta Falcons": "atl",
+      "Baltimore Ravens": "bal",
+      "Buffalo Bills": "buf",
+      "Carolina Panthers": "car",
+      "Chicago Bears": "chi",
+      "Cincinnati Bengals": "cin",
+      "Cleveland Browns": "cle",
+      "Dallas Cowboys": "dal",
+      "Denver Broncos": "den",
+      "Detroit Lions": "det",
+      "Green Bay Packers": "gb",
+      "Houston Texans": "hou",
+      "Indianapolis Colts": "ind",
+      "Jacksonville Jaguars": "jax",
+      "Kansas City Chiefs": "kc",
+      "Las Vegas Raiders": "lv",
+      "Los Angeles Chargers": "lac",
+      "Los Angeles Rams": "lar",
+      "Miami Dolphins": "mia",
+      "Minnesota Vikings": "min",
+      "New England Patriots": "ne",
+      "New Orleans Saints": "no",
+      "New York Giants": "nyg",
+      "New York Jets": "nyj",
+      "Philadelphia Eagles": "phi",
+      "Pittsburgh Steelers": "pit",
+      "San Francisco 49ers": "sf",
+      "Seattle Seahawks": "sea",
+      "Tampa Bay Buccaneers": "tb",
+      "Tennessee Titans": "ten",
+      "Washington Commanders": "wsh"
+    };
+
+    const colorMap = {
+      "Arizona Cardinals": "#97233F",
+      "Atlanta Falcons": "#A71930",
+      "Baltimore Ravens": "#241773",
+      "Buffalo Bills": "#00338D",
+      "Carolina Panthers": "#0085CA",
+      "Chicago Bears": "#0B162A",
+      "Cincinnati Bengals": "#FB4F14",
+      "Cleveland Browns": "#311D00",
+      "Dallas Cowboys": "#003594",
+      "Denver Broncos": "#FB4F14",
+      "Detroit Lions": "#0076B6",
+      "Green Bay Packers": "#203731",
+      "Houston Texans": "#03202F",
+      "Indianapolis Colts": "#002C5F",
+      "Jacksonville Jaguars": "#006778",
+      "Kansas City Chiefs": "#E31837",
+      "Las Vegas Raiders": "#000000",
+      "Los Angeles Chargers": "#0080C6",
+      "Los Angeles Rams": "#003594",
+      "Miami Dolphins": "#008E97",
+      "Minnesota Vikings": "#4F2683",
+      "New England Patriots": "#002244",
+      "New Orleans Saints": "#101820",
+      "New York Giants": "#0B2265",
+      "New York Jets": "#125740",
+      "Philadelphia Eagles": "#004C54",
+      "Pittsburgh Steelers": "#101820",
+      "San Francisco 49ers": "#AA0000",
+      "Seattle Seahawks": "#002244",
+      "Tampa Bay Buccaneers": "#D50A0A",
+      "Tennessee Titans": "#0C2340",
+      "Washington Commanders": "#5A1414"
+    };
+
+    function hexToRgb(hex) {
+      const clean = hex.replace("#", "");
+      const bigint = parseInt(clean, 16);
+      return {
+        r: (bigint >> 16) & 255,
+        g: (bigint >> 8) & 255,
+        b: bigint & 255
+      };
+    }
+
+    function getTextColor(hex) {
+      const { r, g, b } = hexToRgb(hex);
+      const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+      return brightness > 140 ? "#000" : "#fff";
+    }
+
+    let lastStatus = "onClock";
+
+    function applyState(team, status) {
+      if (status === "onClock") {
+        statusInner.textContent = "ON THE CLOCK";
+        widget.classList.remove("pick-in-flash");
+      } else {
+        statusInner.textContent = "THE PICK IS IN";
+
+        if (lastStatus !== "picked") {
+          widget.classList.remove("pick-in-flash");
+          void widget.offsetWidth;
+          widget.classList.add("pick-in-flash");
+        }
+      }
+
+      const code = logoMap[team];
+      if (code) {
+        teamLogo.src = `https://a.espncdn.com/i/teamlogos/nfl/500/${code}.png`;
+      }
+
+      const color = colorMap[team] || "#000";
+      const textColor = getTextColor(color);
+
+      statusText.style.backgroundColor = color;
+      logoBox.style.backgroundColor = color;
+      statusText.style.color = textColor;
+
+      lastStatus = status;
+    }
+
+    // default state
+    applyState("Denver Broncos", "onClock");
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      applyState(data.team, data.status);
+    };
+  </script>
+</body>
+</html>
