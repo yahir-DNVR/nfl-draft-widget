@@ -4,12 +4,15 @@
   <meta charset="UTF-8" />
   <title>NFL Draft Widget</title>
 
-  <link rel="preload" href="/fonts/AbolitionTest-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <!-- Preload font -->
+  <link rel="preload" href="/fonts/Abolition-Regular.woff2" as="font" type="font/woff2" crossorigin>
 
   <style>
     @font-face {
       font-family: "Abolition";
-      src: url("/fonts/AbolitionTest-Regular.woff2") format("woff2");
+      src:
+        url("/fonts/Abolition-Regular.woff2") format("woff2"),
+        url("/fonts/Abolition-Regular.woff") format("woff");
       font-weight: 400;
       font-style: normal;
       font-display: block;
@@ -32,7 +35,6 @@
       width: 1920px;
       height: 1080px;
       background: transparent;
-      overflow: hidden;
     }
 
     .widget {
@@ -42,19 +44,21 @@
       width: 482px;
       height: 82px;
       display: flex;
-      align-items: stretch;
     }
 
     .status-box {
-      background: #000;
-      color: #fff;
       width: 338px;
       height: 82px;
+      background: #000;
+      color: #fff;
+
       display: flex;
       align-items: center;
       justify-content: center;
+
       text-align: center;
       overflow: hidden;
+
       transition: background 200ms ease, color 200ms ease;
     }
 
@@ -63,12 +67,15 @@
       display: flex;
       align-items: center;
       justify-content: center;
+
       white-space: nowrap;
+
       font-family: "Abolition", "Arial Narrow", Impact, sans-serif;
       font-size: 48px;
       letter-spacing: 1px;
       line-height: 0.9;
       text-transform: uppercase;
+
       transform: translateY(-5px);
     }
 
@@ -76,10 +83,12 @@
       width: 144px;
       height: 82px;
       background: #000;
+
       display: flex;
       align-items: center;
       justify-content: center;
       overflow: hidden;
+
       transition: background 200ms ease;
     }
 
@@ -87,9 +96,10 @@
       width: 160px;
       height: 160px;
       object-fit: contain;
+
       transform: scale(1.12);
-      transform-origin: center center;
-      display: block;
+      transform-origin: center;
+
       user-select: none;
       pointer-events: none;
     }
@@ -111,8 +121,9 @@
       <div id="statusText" class="status-box">
         <div id="statusInner" class="status-inner">ON THE CLOCK</div>
       </div>
+
       <div id="logoBox" class="logo-box">
-        <img id="teamLogo" src="https://a.espncdn.com/i/teamlogos/nfl/500/lv.png" alt="Team logo">
+        <img id="teamLogo" src="https://a.espncdn.com/i/teamlogos/nfl/500/lv.png">
       </div>
     </div>
   </div>
@@ -221,6 +232,7 @@
         widget.classList.remove("pick-in-flash");
       } else {
         statusInner.textContent = "THE PICK IS IN";
+
         if (lastStatus !== "picked") {
           widget.classList.remove("pick-in-flash");
           void widget.offsetWidth;
@@ -230,7 +242,6 @@
 
       const code = logoMap[team] || "lv";
       teamLogo.src = `https://a.espncdn.com/i/teamlogos/nfl/500/${code}.png`;
-      teamLogo.alt = `${team} logo`;
 
       const color = colorMap[team] || "#000000";
       const textColor = getTextColor(color);
@@ -247,10 +258,6 @@
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       applyState(data.team || "Denver Broncos", data.status || "onClock");
-    };
-
-    ws.onerror = () => {
-      console.log("WebSocket error; showing default state.");
     };
   </script>
 </body>
