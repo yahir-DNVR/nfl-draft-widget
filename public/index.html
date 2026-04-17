@@ -7,7 +7,9 @@
   <style>
     @font-face {
       font-family: "Abolition";
-      src: url("/fonts/AbolitionTest-Regular.otf") format("opentype");
+      src:
+        url("/fonts/AbolitionTest-Regular.woff2") format("woff2"),
+        url("/fonts/AbolitionTest-Regular.otf") format("opentype");
       font-weight: normal;
       font-style: normal;
       font-display: block;
@@ -52,6 +54,7 @@
       align-items: center;
       justify-content: center;
       text-align: center;
+      overflow: hidden;
       transition: background 200ms ease, color 200ms ease;
     }
 
@@ -61,12 +64,12 @@
       align-items: center;
       justify-content: center;
       white-space: nowrap;
-      line-height: 0.9;
       font-family: "Abolition", Arial, sans-serif;
-      font-size: 61px;
-      letter-spacing: 1.2px;
+      font-size: 48px;
+      letter-spacing: 1px;
+      line-height: 0.9;
       text-transform: uppercase;
-      transform: translateY(-7px);
+      transform: translateY(-5px);
     }
 
     .logo-box {
@@ -81,10 +84,10 @@
     }
 
     .logo-box img {
-      width: 170px;
-      height: 170px;
+      width: 160px;
+      height: 160px;
       object-fit: contain;
-      transform: scale(1.18);
+      transform: scale(1.12);
       transform-origin: center center;
       display: block;
       user-select: none;
@@ -239,11 +242,11 @@
       lastStatus = status;
     }
 
-    applyState("Las Vegas Raiders", "onClock");
+    applyState("Denver Broncos", "onClock");
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      applyState(data.team || "Las Vegas Raiders", data.status || "onClock");
+      applyState(data.team || "Denver Broncos", data.status || "onClock");
     };
 
     ws.onerror = () => {
