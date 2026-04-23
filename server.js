@@ -13,6 +13,12 @@ const wss = new WebSocket.Server({ server });
 
 let lastPayload = null;
 
+let controlState = {
+  mode: "auto", // "auto" or "manual"
+  team: "Las Vegas Raiders",
+  status: "onClock"
+};
+
 function broadcast(data) {
   const message = JSON.stringify(data);
   wss.clients.forEach((client) => {
@@ -65,15 +71,10 @@ async function findLivePick() {
     fetchJson(statusUrl)
   ]);
 
-  console.log("Draft rounds received");
-  console.log("Draft status received:", statusData);
-
   const statusName = String(statusData?.type?.name || "").toUpperCase();
   const statusState = String(statusData?.type?.state || "").toLowerCase();
 
-  // Force Raiders until ESPN flips to live
   if (statusName === "SCHEDULED" || statusState === "pre") {
-    console.log("Draft still in pre/scheduled state. Forcing Raiders.");
     return {
       team: "Las Vegas Raiders",
       status: "onClock"
@@ -91,11 +92,8 @@ async function findLivePick() {
     statusData?.selection ||
     1;
 
-  console.log("Current round:", currentRound, "Current pick:", currentPick);
-
   const rounds = roundsData?.items || roundsData?.rounds || [];
   if (!Array.isArray(rounds) || !rounds.length) {
-    console.log("No rounds found");
     return null;
   }
 
@@ -123,12 +121,10 @@ async function findLivePick() {
   }
 
   if (!roundRef) {
-    console.log("No matching round found");
     return null;
   }
 
   const picks = roundRef?.picks?.items || roundRef?.picks || [];
-  console.log("Picks in round:", picks.length);
 
   for (const p of picks) {
     const pickObj = p?.$ref ? await fetchJson(p.$ref) : p;
@@ -183,9 +179,15 @@ async function findLivePick() {
 
 async function checkDraft() {
   try {
-    const livePick = await findLivePick();
-    console.log("Live pick found:", livePick);
+    if (controlState.mode === "manual") {
+      broadcastIfChanged({
+        team: controlState.team,
+        status: controlState.status
+      });
+      return;
+    }
 
+    const livePick = await findLivePick();
     if (!livePick) return;
 
     broadcastIfChanged(livePick);
@@ -194,18 +196,50 @@ async function checkDraft() {
   }
 }
 
-wss.on("connection", (ws) => {
-  if (lastPayload) {
-    ws.send(JSON.stringify(lastPayload));
-  } else {
-    ws.send(JSON.stringify({
-      team: "Las Vegas Raiders",
-      status: "onClock"
-    }));
+app.use(express.json());
+app.use(express.static("public"));
+
+app.get("/api/control", (req, res) => {
+  res.json(controlState);
+});
+
+app.post("/api/control/manual", (req, res) => {
+  const { team, status } = req.body || {};
+
+  if (!team || !status) {
+    return res.status(400).json({ error: "team and status are required" });
   }
+
+  controlState = {
+    mode: "manual",
+    team,
+    status
+  };
+
+  broadcastIfChanged({
+    team: controlState.team,
+    status: controlState.status
+  });
+
+  res.json({ ok: true, controlState });
+});
+
+app.post("/api/control/auto", async (req, res) => {
+  controlState.mode = "auto";
+
+  await checkDraft();
+
+  res.json({ ok: true, controlState });
+});
+
+wss.on("connection", (ws) => {
+  const initialPayload =
+    controlState.mode === "manual"
+      ? { team: controlState.team, status: controlState.status }
+      : lastPayload || { team: "Las Vegas Raiders", status: "onClock" };
+
+  ws.send(JSON.stringify(initialPayload));
 });
 
 checkDraft();
 setInterval(checkDraft, 5000);
-
-app.use(express.static("public"));
