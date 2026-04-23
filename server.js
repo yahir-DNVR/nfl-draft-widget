@@ -56,16 +56,6 @@ function normalizeStatus(rawStatus) {
   return null;
 }
 
-function teamNameFromRef(refObj) {
-  return (
-    refObj?.team?.displayName ||
-    refObj?.team?.shortDisplayName ||
-    refObj?.displayName ||
-    refObj?.shortDisplayName ||
-    null
-  );
-}
-
 async function findLivePick() {
   const roundsUrl = `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/${YEAR}/draft/rounds`;
   const statusUrl = `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/${YEAR}/draft/status`;
@@ -77,6 +67,18 @@ async function findLivePick() {
 
   console.log("Draft rounds received");
   console.log("Draft status received:", statusData);
+
+  const statusName = String(statusData?.type?.name || "").toUpperCase();
+  const statusState = String(statusData?.type?.state || "").toLowerCase();
+
+  // Force Raiders until ESPN flips to live
+  if (statusName === "SCHEDULED" || statusState === "pre") {
+    console.log("Draft still in pre/scheduled state. Forcing Raiders.");
+    return {
+      team: "Las Vegas Raiders",
+      status: "onClock"
+    };
+  }
 
   const currentRound =
     statusData?.currentRound ||
@@ -97,7 +99,6 @@ async function findLivePick() {
     return null;
   }
 
-  // Try to find the round object matching currentRound
   let roundRef = null;
 
   for (const r of rounds) {
@@ -107,7 +108,6 @@ async function findLivePick() {
     }
   }
 
-  // If the round list is refs only, dereference them until we find the right round
   if (!roundRef) {
     for (const r of rounds) {
       if (r?.$ref) {
@@ -130,7 +130,6 @@ async function findLivePick() {
   const picks = roundRef?.picks?.items || roundRef?.picks || [];
   console.log("Picks in round:", picks.length);
 
-  // Try exact current pick first
   for (const p of picks) {
     const pickObj = p?.$ref ? await fetchJson(p.$ref) : p;
     const pickNumber = pickObj?.number || pickObj?.pick || pickObj?.selection;
@@ -145,8 +144,8 @@ async function findLivePick() {
 
       const team =
         pickObj?.team?.displayName ||
-        teamNameFromRef(pickObj) ||
-        "Denver Broncos";
+        pickObj?.team?.shortDisplayName ||
+        "Las Vegas Raiders";
 
       return {
         team,
@@ -155,7 +154,6 @@ async function findLivePick() {
     }
   }
 
-  // Fallback: first pick marked on clock
   for (const p of picks) {
     const pickObj = p?.$ref ? await fetchJson(p.$ref) : p;
     const rawStatus =
@@ -167,8 +165,8 @@ async function findLivePick() {
     if (norm === "onClock") {
       const team =
         pickObj?.team?.displayName ||
-        teamNameFromRef(pickObj) ||
-        "Denver Broncos";
+        pickObj?.team?.shortDisplayName ||
+        "Las Vegas Raiders";
 
       return {
         team,
@@ -177,7 +175,10 @@ async function findLivePick() {
     }
   }
 
-  return null;
+  return {
+    team: "Las Vegas Raiders",
+    status: "onClock"
+  };
 }
 
 async function checkDraft() {
@@ -198,7 +199,7 @@ wss.on("connection", (ws) => {
     ws.send(JSON.stringify(lastPayload));
   } else {
     ws.send(JSON.stringify({
-      team: "Denver Broncos",
+      team: "Las Vegas Raiders",
       status: "onClock"
     }));
   }
