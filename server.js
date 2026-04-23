@@ -3,6 +3,7 @@ const WebSocket = require("ws");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const YEAR = 2026;
 
 const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
@@ -14,7 +15,6 @@ let lastPayload = null;
 
 function broadcast(data) {
   const message = JSON.stringify(data);
-
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(message);
@@ -33,20 +33,18 @@ function broadcastIfChanged(data) {
   }
 }
 
-const DRAFT_URL = "https://site.api.espn.com/apis/v2/sports/football/nfl/draft";
-
-function getAllPicks(data) {
-  if (!data?.draft?.rounds) return [];
-
-  const allPicks = [];
-
-  for (const round of data.draft.rounds) {
-    if (Array.isArray(round.picks)) {
-      allPicks.push(...round.picks);
+async function fetchJson(url) {
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0"
     }
+  });
+
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} for ${url}`);
   }
 
-  return allPicks;
+  return res.json();
 }
 
 function normalizeStatus(rawStatus) {
@@ -58,25 +56,120 @@ function normalizeStatus(rawStatus) {
   return null;
 }
 
-function findLivePick(data) {
-  const allPicks = getAllPicks(data);
+function teamNameFromRef(refObj) {
+  return (
+    refObj?.team?.displayName ||
+    refObj?.team?.shortDisplayName ||
+    refObj?.displayName ||
+    refObj?.shortDisplayName ||
+    null
+  );
+}
 
-  console.log("Total picks found:", allPicks.length);
+async function findLivePick() {
+  const roundsUrl = `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/${YEAR}/draft/rounds`;
+  const statusUrl = `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/${YEAR}/draft/status`;
 
-  if (!allPicks.length) return null;
+  const [roundsData, statusData] = await Promise.all([
+    fetchJson(roundsUrl),
+    fetchJson(statusUrl)
+  ]);
 
-  for (const pick of allPicks) {
+  console.log("Draft rounds received");
+  console.log("Draft status received:", statusData);
+
+  const currentRound =
+    statusData?.currentRound ||
+    statusData?.round ||
+    1;
+
+  const currentPick =
+    statusData?.currentPick ||
+    statusData?.pick ||
+    statusData?.selection ||
+    1;
+
+  console.log("Current round:", currentRound, "Current pick:", currentPick);
+
+  const rounds = roundsData?.items || roundsData?.rounds || [];
+  if (!Array.isArray(rounds) || !rounds.length) {
+    console.log("No rounds found");
+    return null;
+  }
+
+  // Try to find the round object matching currentRound
+  let roundRef = null;
+
+  for (const r of rounds) {
+    if ((r?.number || r?.round) === currentRound) {
+      roundRef = r;
+      break;
+    }
+  }
+
+  // If the round list is refs only, dereference them until we find the right round
+  if (!roundRef) {
+    for (const r of rounds) {
+      if (r?.$ref) {
+        const fullRound = await fetchJson(r.$ref);
+        if ((fullRound?.number || fullRound?.round) === currentRound) {
+          roundRef = fullRound;
+          break;
+        }
+      }
+    }
+  } else if (roundRef?.$ref) {
+    roundRef = await fetchJson(roundRef.$ref);
+  }
+
+  if (!roundRef) {
+    console.log("No matching round found");
+    return null;
+  }
+
+  const picks = roundRef?.picks?.items || roundRef?.picks || [];
+  console.log("Picks in round:", picks.length);
+
+  // Try exact current pick first
+  for (const p of picks) {
+    const pickObj = p?.$ref ? await fetchJson(p.$ref) : p;
+    const pickNumber = pickObj?.number || pickObj?.pick || pickObj?.selection;
+
+    if (pickNumber === currentPick) {
+      const rawStatus =
+        pickObj?.status?.type?.name ||
+        pickObj?.status?.name ||
+        statusData?.type?.name ||
+        statusData?.name ||
+        "";
+
+      const team =
+        pickObj?.team?.displayName ||
+        teamNameFromRef(pickObj) ||
+        "Denver Broncos";
+
+      return {
+        team,
+        status: normalizeStatus(rawStatus) || "onClock"
+      };
+    }
+  }
+
+  // Fallback: first pick marked on clock
+  for (const p of picks) {
+    const pickObj = p?.$ref ? await fetchJson(p.$ref) : p;
     const rawStatus =
-      pick?.status?.type?.name ||
-      pick?.status?.name ||
-      pick?.pickStatus ||
+      pickObj?.status?.type?.name ||
+      pickObj?.status?.name ||
       "";
 
-    const team = pick?.team?.displayName || "Unknown Team";
+    const norm = normalizeStatus(rawStatus);
+    if (norm === "onClock") {
+      const team =
+        pickObj?.team?.displayName ||
+        teamNameFromRef(pickObj) ||
+        "Denver Broncos";
 
-    console.log("Pick check:", team, rawStatus);
-
-    if (normalizeStatus(rawStatus) === "onClock") {
       return {
         team,
         status: "onClock"
@@ -84,36 +177,12 @@ function findLivePick(data) {
     }
   }
 
-  const latestPick = allPicks[allPicks.length - 1];
-
-  if (latestPick) {
-    const rawStatus =
-      latestPick?.status?.type?.name ||
-      latestPick?.status?.name ||
-      latestPick?.pickStatus ||
-      "";
-
-    return {
-      team: latestPick?.team?.displayName || "Denver Broncos",
-      status: normalizeStatus(rawStatus) || "picked"
-    };
-  }
-
   return null;
 }
 
 async function checkDraft() {
   try {
-    const res = await fetch(DRAFT_URL, {
-      headers: {
-        "User-Agent": "Mozilla/5.0"
-      }
-    });
-
-    const data = await res.json();
-    console.log("Draft data received");
-
-    const livePick = findLivePick(data);
+    const livePick = await findLivePick();
     console.log("Live pick found:", livePick);
 
     if (!livePick) return;
