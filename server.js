@@ -61,32 +61,36 @@ function normalizeStatus(rawStatus) {
 function findLivePick(data) {
   const allPicks = getAllPicks(data);
 
+  console.log("Total picks found:", allPicks.length);
+
   if (!allPicks.length) return null;
 
-  // First try to find the team currently on the clock
-  const onClockPick = allPicks.find((pick) => {
+  for (const pick of allPicks) {
     const rawStatus =
       pick?.status?.type?.name ||
       pick?.status?.name ||
+      pick?.pickStatus ||
       "";
 
-    return normalizeStatus(rawStatus) === "onClock";
-  });
+    const team = pick?.team?.displayName || "Unknown Team";
 
-  if (onClockPick) {
-    return {
-      team: onClockPick?.team?.displayName || "Denver Broncos",
-      status: "onClock"
-    };
+    console.log("Pick check:", team, rawStatus);
+
+    if (normalizeStatus(rawStatus) === "onClock") {
+      return {
+        team,
+        status: "onClock"
+      };
+    }
   }
 
-  // If no "on clock" status exists, use the most recent live/available pick
   const latestPick = allPicks[allPicks.length - 1];
 
   if (latestPick) {
     const rawStatus =
       latestPick?.status?.type?.name ||
       latestPick?.status?.name ||
+      latestPick?.pickStatus ||
       "";
 
     return {
@@ -107,7 +111,10 @@ async function checkDraft() {
     });
 
     const data = await res.json();
+    console.log("Draft data received");
+
     const livePick = findLivePick(data);
+    console.log("Live pick found:", livePick);
 
     if (!livePick) return;
 
