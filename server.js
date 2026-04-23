@@ -12,7 +12,6 @@ const wss = new WebSocket.Server({ server });
 
 let lastPayload = null;
 
-// Send data to all connected overlays
 function broadcast(data) {
   const message = JSON.stringify(data);
 
@@ -23,7 +22,6 @@ function broadcast(data) {
   });
 }
 
-// Only send if something changed
 function broadcastIfChanged(data) {
   const next = JSON.stringify(data);
   const prev = lastPayload ? JSON.stringify(lastPayload) : null;
@@ -35,10 +33,71 @@ function broadcastIfChanged(data) {
   }
 }
 
-// ESPN draft endpoint
 const DRAFT_URL = "https://site.api.espn.com/apis/v2/sports/football/nfl/draft";
 
-// Poll the draft feed
+function getAllPicks(data) {
+  if (!data?.draft?.rounds) return [];
+
+  const allPicks = [];
+
+  for (const round of data.draft.rounds) {
+    if (Array.isArray(round.picks)) {
+      allPicks.push(...round.picks);
+    }
+  }
+
+  return allPicks;
+}
+
+function normalizeStatus(rawStatus) {
+  const s = String(rawStatus || "").toLowerCase();
+
+  if (s.includes("on")) return "onClock";
+  if (s.includes("pick") || s.includes("selection")) return "picked";
+
+  return null;
+}
+
+function findLivePick(data) {
+  const allPicks = getAllPicks(data);
+
+  if (!allPicks.length) return null;
+
+  // First try to find the team currently on the clock
+  const onClockPick = allPicks.find((pick) => {
+    const rawStatus =
+      pick?.status?.type?.name ||
+      pick?.status?.name ||
+      "";
+
+    return normalizeStatus(rawStatus) === "onClock";
+  });
+
+  if (onClockPick) {
+    return {
+      team: onClockPick?.team?.displayName || "Denver Broncos",
+      status: "onClock"
+    };
+  }
+
+  // If no "on clock" status exists, use the most recent live/available pick
+  const latestPick = allPicks[allPicks.length - 1];
+
+  if (latestPick) {
+    const rawStatus =
+      latestPick?.status?.type?.name ||
+      latestPick?.status?.name ||
+      "";
+
+    return {
+      team: latestPick?.team?.displayName || "Denver Broncos",
+      status: normalizeStatus(rawStatus) || "picked"
+    };
+  }
+
+  return null;
+}
+
 async function checkDraft() {
   try {
     const res = await fetch(DRAFT_URL, {
@@ -48,45 +107,28 @@ async function checkDraft() {
     });
 
     const data = await res.json();
-    const pick = data?.draft?.rounds?.[0]?.picks?.[0];
+    const livePick = findLivePick(data);
 
-    if (!pick) {
-      return;
-    }
+    if (!livePick) return;
 
-    const team = pick?.team?.displayName || "Denver Broncos";
-    const rawStatus = pick?.status?.type?.name || "";
-
-    const status = rawStatus.toLowerCase().includes("on")
-      ? "onClock"
-      : "picked";
-
-    broadcastIfChanged({
-      team,
-      status
-    });
+    broadcastIfChanged(livePick);
   } catch (err) {
     console.error("Draft fetch error:", err.message);
   }
 }
 
-// Send current state when a client connects
 wss.on("connection", (ws) => {
   if (lastPayload) {
     ws.send(JSON.stringify(lastPayload));
   } else {
-    ws.send(
-      JSON.stringify({
-        team: "Denver Broncos",
-        status: "onClock"
-      })
-    );
+    ws.send(JSON.stringify({
+      team: "Denver Broncos",
+      status: "onClock"
+    }));
   }
 });
 
-// Start polling
 checkDraft();
 setInterval(checkDraft, 5000);
 
-// Serve static files from /public
 app.use(express.static("public"));
